@@ -1,0 +1,321 @@
+Configuración del FortiGate 7.6.2 (100% por GUI)
+
+4.0 Habilitar funciones necesarias
+
+System → Feature Visibility y activa (si no están):
+
+
+Web Application Firewall (WAF)
+DNS Filter
+Application Control
+Intrusion Prevention (IPS)
+(DoS Policy suele estar visible por defecto)
+
+
+Guarda (Apply).
+
+4.1 DNS del sistema
+
+Network → DNS
+
+
+Primary: 8.8.8.8
+Secondary: 1.1.1.1
+Apply
+
+
+4.2 Interfaces
+
+Network → Interfaces
+
+port1 (WAN) — doble clic en port1:
+
+
+Alias: WAN
+Role: WAN
+Addressing mode: Manual
+IP/Netmask: 200.0.0.1/255.255.255.252
+Administrative Access: HTTPS, PING, SSH
+OK
+
+
+port2 (LAN Usuarios) — doble clic en port2:
+
+
+Alias: LAN_USERS
+Role: LAN
+Addressing mode: Manual
+IP/Netmask: 7.41.1.1/255.255.255.128
+Administrative Access: PING, HTTPS
+(El DHCP se activa en el paso 4.3)
+OK
+
+
+port3 (LAN Servidores) — doble clic en port3:
+
+
+Alias: LAN_SERVERS
+Role: LAN
+Addressing mode: Manual
+IP/Netmask: 7.41.2.1/255.255.255.240
+Administrative Access: PING
+OK
+
+
+4.3 DHCP en la LAN de Usuarios (port2)
+
+Sigue en Network → Interfaces → port2 → Edit y activa DHCP Server:
+
+
+Address Range: Start 7.41.1.10 — End 7.41.1.126
+Netmask: 255.255.255.128
+Default Gateway: Same as Interface IP (7.41.1.1)
+DNS Server: Same as System DNS (o específico 8.8.8.8)
+OK
+
+
+4.4 Ruta por defecto
+
+Network → Static Routes → Create New
+
+
+Destination: 0.0.0.0/0.0.0.0
+Interface: port1
+Gateway Address: 200.0.0.2
+Administrative Distance: 10
+OK
+
+
+4.5 Objetos de dirección
+
+Policy & Objects → Addresses → Create New → Address (crea estos 3):
+
+NameTypeSubnet/IPInterfaceLAN_USERS_NETSubnet7.41.1.0/25port2LAN_SERVERS_NETSubnet7.41.2.0/28port3WEB_SERVERSubnet7.41.2.2/32port3
+
+4.6 Servicio HTTP
+
+El servicio HTTP (TCP/80) ya viene predefinido en Policy & Objects → Services. Se usará para el filtrado "solo HTTP".
+
+
+5. Perfiles de seguridad (Security Profiles)
+
+Crea los perfiles antes de las políticas para poder asignarlos.
+
+5.1 SSL/SSH Inspection (necesario para inspeccionar HTTPS)
+
+Muchos bloqueos (redes sociales, WhatsApp, itla.edu.do por HTTPS) requieren deep inspection.
+
+Security Profiles → SSL/SSH Inspection → Create New
+
+
+Name: deep-inspection-custom (o usa el deep-inspection que ya trae el equipo)
+Inspection method: Full SSL Inspection (deep)
+OK
+
+
+
+Importante: para que los clientes no den error de certificado, exporta el certificado CA del FortiGate (System → Certificates → Fortinet_CA_SSL → Download) e instálalo como CA de confianza en Kali/VPC/navegador. Alternativa sin instalar CA: usar DNS Filter (bloquea por dominio sin romper el TLS) — se incluye abajo.
+
+
+
+5.2 Web Filter — Redes sociales + itla.edu.do
+
+Security Profiles → Web Filter → Create New
+
+
+Name: WF-Bloqueos
+FortiGuard Category Based Filter: activa FortiGuard category based filter y en la lista pon en Block la categoría Social Networking (categoría 37). Recomendado bloquear también Proxy Avoidance para que no lo esquiven.
+Static URL Filter → Enable URL Filter → Create New (para itla.edu.do):
+
+
+URLTypeActionitla.edu.doWildcardBlock*.itla.edu.doWildcardBlock
+
+
+OK
+
+
+5.3 DNS Filter — refuerzo de bloqueos (recomendado)
+
+Bloquea por nombre de dominio a nivel DNS (funciona aunque no instales el CA).
+Security Profiles → DNS Filter → Create New
+
+
+Name: DNS-Bloqueos
+FortiGuard Category: Block Social Networking
+Domain Filter → Enable y crea:
+
+
+DomainTypeAction*.itla.edu.doWildcardBlockitla.edu.doWildcardBlock
+
+
+OK
+
+
+5.4 Application Control — Bloquear llamadas de WhatsApp
+
+Security Profiles → Application Control → Create New
+
+
+Name: APP-NoWhatsAppCall
+Deja las categorías en Monitor (o Allow) para no romper el resto.
+En Application and Filter Overrides → Add Signatures, busca "WhatsApp" y agrega con Action = Block:
+
+WhatsApp_Voip / WhatsApp_Voice (llamada de voz)
+WhatsApp_Video (videollamada)
+(Deja WhatsApp de mensajería en Monitor/Allow para que el chat siga funcionando.)
+
+
+
+(Opcional) bloquear la categoría VoIP completa si quieres ser más estricto.
+OK
+
+
+
+Las llamadas de WhatsApp van cifradas: para detectarlas de forma fiable, aplica este perfil con SSL deep-inspection en la política de salida a Internet.
+
+
+
+5.5 IPS — Detectar y bloquear escáneres de red
+
+Security Profiles → Intrusion Prevention → Create New
+
+
+Name: IPS-AntiScan
+Add Filter (o Create New entrada):
+
+Filter por Category que incluya reconocimiento/scan, o agrega firmas por búsqueda "scan"/"nmap" (ej. TCP.Port.Scan, Nmap, firmas de tipo Reconnaissance).
+Action: Block
+Packet Logging: Enable
+
+
+
+OK
+
+
+Además, para escaneo de puertos usa una DoS Policy (más efectiva contra port-scans):
+Policy & Objects → DoS Policy → Create New
+
+
+Name: DoS-AntiScan-Users
+Incoming Interface: port2
+Source/Destination: all
+Service: ALL
+En L4 Anomalies activa y pon Action = Block con umbrales por defecto en:
+
+tcp_port_scan
+udp_scan
+icmp_sweep
+ip_src_session
+
+
+
+Enable Logging
+OK
+
+
+
+Crea también una DoS Policy igual con Incoming Interface port1 para detectar escaneos desde Internet.
+
+
+
+5.6 WAF — Web Application Firewall para el servidor Web
+
+Security Profiles → Web Application Firewall → Create New
+
+
+Name: WAF-WebServer
+Activa Signatures (usa el conjunto por defecto: Known Attacks, SQL Injection, XSS, etc.), Action Block.
+Activa Protocol Constraints si quieres validar el HTTP.
+OK
+
+
+
+WAF es inspección proxy-based. Se aplicará en la política que lleva el tráfico HTTP hacia el servidor Web.
+
+
+
+
+6. Políticas de firewall (orden = de arriba hacia abajo)
+
+Policy & Objects → Firewall Policy → Create New. Crea en este orden:
+
+Política 1 — Usuarios → Servidor Web SOLO HTTP (con WAF e IPS)
+
+
+Name: Users_to_Web_HTTP
+Incoming Interface: port2
+Outgoing Interface: port3
+Source: LAN_USERS_NET
+Destination: WEB_SERVER
+Service: HTTP
+Action: ACCEPT
+NAT: OFF (tráfico interno)
+Security Profiles:
+
+Web Application Firewall: WAF-WebServer
+IPS: IPS-AntiScan
+SSL Inspection: certificate-inspection (HTTP no cifrado; con WAF proxy basta)
+
+
+
+Log Allowed Traffic: All Sessions
+OK
+
+
+Política 2 — Bloquear TODO lo demás de Usuarios → Servidores
+
+
+Name: Block_Users_to_Servers
+Incoming: port2 / Outgoing: port3
+Source: LAN_USERS_NET
+Destination: LAN_SERVERS_NET
+Service: ALL
+Action: DENY
+Log Violation Traffic: Enable
+OK
+
+
+
+Con esto queda cumplido: "solo HTTP de usuarios a servidores, bloquear todo lo demás" (ping, HTTPS, SSH, etc. hacia los servidores quedan denegados).
+
+
+
+Política 3 — Usuarios → Internet (NAT + filtros de contenido)
+
+
+Name: Users_to_Internet
+Incoming: port2 / Outgoing: port1
+Source: LAN_USERS_NET
+Destination: all
+Service: ALL (o limita a HTTP, HTTPS, DNS, PING)
+Action: ACCEPT
+NAT: ON (Use Outgoing Interface Address → sale como 200.0.0.1)
+Security Profiles:
+
+Web Filter: WF-Bloqueos
+DNS Filter: DNS-Bloqueos
+Application Control: APP-NoWhatsAppCall
+IPS: IPS-AntiScan
+SSL Inspection: deep-inspection-custom
+
+
+
+Log Allowed Traffic: All Sessions
+OK
+
+
+Política 4 — Servidores → Internet (opcional, para actualizaciones)
+
+
+Name: Servers_to_Internet
+Incoming: port3 / Outgoing: port1
+Source: LAN_SERVERS_NET
+Destination: all
+Service: ALL
+Action: ACCEPT
+NAT: ON
+OK
+
+
+
+Debajo de todo queda el implicit deny del FortiGate que bloquea cualquier otro tráfico no contemplado.
