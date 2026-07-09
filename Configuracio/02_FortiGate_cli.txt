@@ -1,0 +1,250 @@
+# ============================================================
+# FortiGate 7.6.2 - Configuracion completa (CLI)
+# Practica Seguridad de Redes - Miguel Angel Pena (2025-0741)
+# ============================================================
+# Nota: toda la configuracion tambien se realizo por GUI.
+# Este archivo documenta el equivalente CLI.
+# ------------------------------------------------------------
+
+# --- Interfaces ---
+config system interface
+    edit "port1"
+        set alias "WAN"
+        set mode static
+        set ip 200.0.0.1 255.255.255.252
+        set allowaccess ping https ssh
+        set role wan
+    next
+    edit "port2"
+        set alias "LAN_USERS"
+        set mode static
+        set ip 7.41.1.1 255.255.255.128
+        set allowaccess ping https
+        set role lan
+    next
+    edit "port3"
+        set alias "LAN_SERVERS"
+        set mode static
+        set ip 7.41.2.1 255.255.255.240
+        set allowaccess ping
+        set role lan
+    next
+end
+
+# --- DNS del sistema (obligatorio para FortiGuard) ---
+config system dns
+    set primary 8.8.8.8
+    set secondary 1.1.1.1
+end
+
+# --- Servidor DHCP en la LAN de usuarios (port2) ---
+# IMPORTANTE: se eliminaron vci-match / vci-string, heredados del modo
+# IPAM, que impedian la entrega de IP a clientes no Fortinet.
+config system dhcp server
+    edit 1
+        set interface "port2"
+        set default-gateway 7.41.1.1
+        set netmask 255.255.255.128
+        set dns-service default
+        config ip-range
+            edit 1
+                set start-ip 7.41.1.10
+                set end-ip 7.41.1.126
+            next
+        end
+    next
+end
+
+# --- Ruta por defecto ---
+config router static
+    edit 1
+        set dst 0.0.0.0 0.0.0.0
+        set gateway 200.0.0.2
+        set device "port1"
+        set distance 10
+    next
+end
+
+# --- Objetos de direccion ---
+config firewall address
+    edit "LAN_USERS_NET"
+        set subnet 7.41.1.0 255.255.255.128
+    next
+    edit "LAN_SERVERS_NET"
+        set subnet 7.41.2.0 255.255.255.240
+    next
+    edit "WEB_SERVER"
+        set subnet 7.41.2.2 255.255.255.255
+    next
+end
+
+# --- Web Filter (error-allow para no bloquear todo sin FortiGuard) ---
+config webfilter profile
+    edit "WF-Bloqueos"
+        set options error-allow
+    next
+end
+
+# --- DNS Filter: lista local (redes sociales + itla.edu.do) ---
+# Las categorias FortiGuard no operan en trial; se usan dominios locales.
+config dnsfilter domain-filter
+    edit 1
+        set name "Bloqueos-Local"
+        config entries
+            edit 1
+                set domain "itla.edu.do"
+                set type wildcard
+                set action block
+            next
+            edit 2
+                set domain "*.itla.edu.do"
+                set type wildcard
+                set action block
+            next
+            edit 3
+                set domain "*.facebook.com"
+                set type wildcard
+                set action block
+            next
+            edit 4
+                set domain "*.instagram.com"
+                set type wildcard
+                set action block
+            next
+            edit 5
+                set domain "*.tiktok.com"
+                set type wildcard
+                set action block
+            next
+            edit 6
+                set domain "*.twitter.com"
+                set type wildcard
+                set action block
+            next
+            edit 7
+                set domain "*.x.com"
+                set type wildcard
+                set action block
+            next
+            edit 8
+                set domain "*.snapchat.com"
+                set type wildcard
+                set action block
+            next
+        end
+    next
+end
+config dnsfilter profile
+    edit "DNS-Bloqueos"
+        config domain-filter
+            set domain-filter-table 1
+        end
+    next
+end
+
+# --- Application Control: bloquear llamadas de WhatsApp ---
+config application list
+    edit "APP-NoWhatsAppCall"
+        set other-application-action pass
+        config entries
+            edit 1
+                set action block
+                # Firma: WhatsApp_VoIP.Call (llamada de voz/video)
+            next
+        end
+    next
+end
+
+# --- IPS: sensor anti-escaner (por firmas) ---
+config ips sensor
+    edit "IPS-AntiScan"
+        config entries
+            edit 1
+                set severity medium high critical
+                set status enable
+                set action block
+                set log-packet enable
+            next
+        end
+    next
+end
+
+# --- DoS Policy: deteccion de escaneos por anomalia (no depende de FortiGuard) ---
+# Umbral tcp_port_scan calibrado a 10 (el default 1000 no disparaba con nmap).
+config firewall DoS-policy
+    edit 1
+        set name "DoS-AntiScan-Users"
+        set interface "port2"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        config anomaly
+            edit "tcp_port_scan"
+                set status enable
+                set action block
+                set log enable
+                set threshold 10
+            next
+            edit "udp_scan"
+                set status enable
+                set action block
+                set log enable
+                set threshold 10
+            next
+        end
+    next
+end
+
+# --- Multiple Interface Policies (para dar Internet a ambas LANs en 1 politica) ---
+config system settings
+    set gui-multiple-interface-policy enable
+end
+
+# --- Politicas de firewall ---
+config firewall policy
+    edit 1
+        set name "Usuarios_a_Web_HTTP"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "LAN_USERS_NET"
+        set dstaddr "WEB_SERVER"
+        set action accept
+        set schedule "always"
+        set service "HTTP"
+        set inspection-mode proxy
+        set utm-status enable
+        set ssl-ssh-profile "certificate-inspection"
+        set ips-sensor "IPS-AntiScan"
+        set waf-profile "WAF-WebServer"
+        set logtraffic all
+    next
+    edit 2
+        set name "Bloquear usuarios a servidores"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "LAN_USERS_NET"
+        set dstaddr "LAN_SERVERS_NET"
+        set action deny
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+    edit 3
+        set name "Usuarios_a_Internet"
+        set srcintf "port2" "port3"
+        set dstintf "port1"
+        set srcaddr "LAN_USERS_NET" "LAN_SERVERS_NET"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set utm-status enable
+        set ssl-ssh-profile "certificate-inspection"
+        set webfilter-profile "WF-Bloqueos"
+        set dnsfilter-profile "DNS-Bloqueos"
+        set application-list "APP-NoWhatsAppCall"
+        set ips-sensor "IPS-AntiScan"
+        set nat enable
+        set logtraffic all
+    next
+end

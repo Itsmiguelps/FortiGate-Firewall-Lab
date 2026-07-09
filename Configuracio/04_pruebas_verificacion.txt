@@ -1,0 +1,65 @@
+# ============================================================
+# Pruebas de verificacion (Kali / Windows 10 / Servidor)
+# Practica Seguridad de Redes - Miguel Angel Pena (2025-0741)
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. DHCP
+# ------------------------------------------------------------
+# Kali:
+sudo dhclient -v eth1        # esperado: DHCPACK of 7.41.1.10 from 7.41.1.1
+# Windows 10:
+ipconfig /release
+ipconfig /renew
+ipconfig /all                # esperado: 7.41.1.x /25, gateway 7.41.1.1
+
+# ------------------------------------------------------------
+# 2. Acceso a Internet + NAT + ruta por defecto
+# ------------------------------------------------------------
+ping 8.8.8.8                 # responde (ruta + NAT)
+ping google.com              # responde (DNS)
+# Forti: Log & Report -> Forward Traffic -> salida por port1, NAT a 200.0.0.1
+
+# ------------------------------------------------------------
+# 3. Solo HTTP de usuarios -> servidores
+# ------------------------------------------------------------
+curl http://7.41.2.2         # OK  (HTTP permitido)
+ping 7.41.2.2                # FALLA (ICMP bloqueado)
+# Windows:
+# Test-NetConnection 7.41.2.2 -Port 80    -> True
+# Test-NetConnection 7.41.2.2 -Port 443   -> False
+
+# ------------------------------------------------------------
+# 4. Bloqueo de redes sociales
+# ------------------------------------------------------------
+# Navegador: facebook.com / instagram.com / tiktok.com -> "Web Page Blocked"
+nslookup facebook.com
+# Forti: Security Events -> DNS Query / Web Filter
+
+# ------------------------------------------------------------
+# 5. Bloqueo de itla.edu.do y subdominios
+# ------------------------------------------------------------
+# Navegador: itla.edu.do / www.itla.edu.do / aula.itla.edu.do -> bloqueados
+nslookup aula.itla.edu.do
+
+# ------------------------------------------------------------
+# 6. Bloqueo de llamadas de WhatsApp (App Control)
+# ------------------------------------------------------------
+# App de escritorio/movil: enviar mensaje (OK) / intentar llamada
+# Forti: Security Events -> Application Control (firma WhatsApp_VoIP.Call)
+# NOTA: requiere deep-inspection (no disponible en trial) -> documentado.
+
+# ------------------------------------------------------------
+# 7. Deteccion y bloqueo de escaneres (DoS Policy)
+# ------------------------------------------------------------
+sudo nmap -Pn -p 1-1000 7.41.1.1
+sudo nmap -Pn -p 1-1000 7.41.2.2
+# Forti: Security Events -> Anomaly -> tcp_port_scan / udp_scan (accion: block)
+
+# ------------------------------------------------------------
+# 8. WAF en el servidor web
+# ------------------------------------------------------------
+curl "http://7.41.2.2/?id=1' OR '1'='1"      # intento SQLi
+curl "http://7.41.2.2/?q=<script>alert(1)</script>"   # intento XSS
+# Forti: Security Events -> Web Application Firewall
+# NOTA: la inspeccion proxy del WAF es inestable en trial -> documentado.
