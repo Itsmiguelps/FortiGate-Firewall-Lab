@@ -19,24 +19,19 @@
 # Servidor Web - Linux Mint MATE (7.41.2.2/28)
 # ------------------------------------------------------------
 
-# IP estatica (por GUI de NetworkManager o por nmcli)
-sudo nmcli con mod "Wired connection 1" ipv4.addresses 7.41.2.2/28
-sudo nmcli con mod "Wired connection 1" ipv4.gateway 7.41.2.1
-sudo nmcli con mod "Wired connection 1" ipv4.dns 8.8.8.8
-sudo nmcli con mod "Wired connection 1" ipv4.method manual
-sudo nmcli con up "Wired connection 1"
+# IP estatica 
+ip addr add 7.41.2.2/28 dev ens3
+ ip link set ens3 up
+ ip route add default via 7.41.2.1
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
 
 # Instalacion del servidor web Apache
 sudo apt update
 sudo apt install -y apache2
 sudo systemctl enable --now apache2
 
-# Pagina de prueba
-echo "<h1>Servidor Apache Activo - Miguel Angel Pena - 2025-0741</h1>" | sudo tee /var/www/html/index.html
-
 # Verificacion local
 curl http://localhost
-
 
 # ------------------------------------------------------------
 # Cliente Kali (DHCP - interfaz eth1)
