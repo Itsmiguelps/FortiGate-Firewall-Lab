@@ -1,0 +1,44 @@
+! ============================================================
+! R1 - Router de borde (Cisco IOS)
+! Practica Seguridad de Redes - Miguel Angel Pena (2025-0741)
+! ============================================================
+! Proporciona salida a Internet y el enlace 200.0.0.0/30 con el FortiGate.
+! El FortiGate hace NAT de todo lo interno hacia 200.0.0.1, por lo que
+! R1 solo necesita su propia conectividad a Internet.
+! ------------------------------------------------------------
+
+enable
+configure terminal
+hostname R1
+!
+! --- Salida a Internet (por DHCP desde el cloud "Net") ---
+interface Ethernet0/0
+ ip address dhcp
+ ip nat outside
+ no shutdown
+!
+! --- Enlace con el FortiGate ---
+interface Ethernet0/1
+ ip address 200.0.0.2 255.255.255.252
+ ip nat inside
+ no shutdown
+!
+! --- NAT overload para que 200.0.0.0/30 salga a Internet ---
+access-list 1 permit 200.0.0.0 0.0.0.3
+ip nat inside source list 1 interface Ethernet0/0 overload
+!
+! --- Port-forwarding para administrar la GUI del FortiGate ---
+! Reenvia el puerto 8443 externo al 443 (HTTPS) del FortiGate.
+! Acceso: https://<IP-de-e0/0-de-R1>:8443
+ip nat inside source static tcp 200.0.0.1 443 interface Ethernet0/0 8443
+!
+end
+write memory
+
+! ------------------------------------------------------------
+! Verificacion
+! ------------------------------------------------------------
+! show ip interface brief
+! show ip nat translations
+! ping 8.8.8.8
+! ping 200.0.0.1
