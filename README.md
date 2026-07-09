@@ -2,10 +2,6 @@
 <h3 align="center">Topología de Seguridad de Redes en PNETLab</h3>
 
 <p align="center">
-  <img src="capturas/00_logo_itla.png" alt="ITLA" width="220"/>
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/FortiGate-7.6.2-red?style=for-the-badge&logo=fortinet" alt="FortiGate"/>
   <img src="https://img.shields.io/badge/PNETLab-Lab-blue?style=for-the-badge" alt="PNETLab"/>
   <img src="https://img.shields.io/badge/Materia-Seguridad%20de%20Redes-orange?style=for-the-badge" alt="Materia"/>
